@@ -1,0 +1,46 @@
+<?php
+/**
+ * @file
+ * Install file for Acquia Search Reconnect module.
+ */
+
+/**
+ * Implements hook_install().
+ *
+ * @inheritdoc
+ */
+function acquia_search_reconnect_install() {
+  // Select current weight of `ApacheSolr` module.
+  $result = db_select('system', 's')
+    ->fields('s', array('weight'))
+    ->condition('s.name', 'apachesolr', '=')
+    ->execute()
+    ->fetchAssoc();
+
+  // If `ApacheSolr` module is already present, move ours higher.
+  if (FALSE !== $result) {
+    $weight = $result["weight"];
+    $weight = intval($weight) + 1;
+
+    watchdog('acquia_search_reconnect', "Setting weight of `acquia_search_reconnect` to %weight.", array('weight' => $weight), WATCHDOG_NOTICE);
+    acquia_search_reconnect_set_weight($weight);
+  }
+  else {
+    watchdog('acquia_search_reconnect', "Setting weight of `acquia_search_reconnect` to default(1).", array(), WATCHDOG_NOTICE);
+    acquia_search_reconnect_set_weight(1);
+  }
+
+}
+
+/**
+ * Helper function to set the weight of `Acquia Search Reconnect` module.
+ *
+ * @param int $weight
+ *   Desired weight of the module.
+ */
+function acquia_search_reconnect_set_weight($weight) {
+  db_update('system')
+    ->fields(array('weight' => $weight))
+    ->condition('name', 'acquia_search_reconnect', '=')
+    ->execute();
+}

@@ -1,0 +1,127 @@
+<?php
+/**
+ * @file
+ * Module file.
+ */
+
+/**
+ * Implements hook_cron().
+ */
+function acquia_search_reconnect_cron() {
+
+  // Get identifiers and variables that are mandatory.
+  $identifier = variable_get('acquia_identifier', NULL);
+  // It seems that Acquia identifier is Search Core name as well.
+  $core_name = $identifier;
+  $key = variable_get('acquia_key', NULL);
+  $env_id = variable_get('apachesolr_default_environment', NULL);
+
+  try {
+    if (($identifier == NULL) || ($key == NULL) || ($env_id == NULL)) {
+      $msg = "Acquia identifier, key or environment ID is not set! ";
+      $msg .= "Identifier: '" . check_plain($identifier) . "'";
+      $msg .= " , env_id: '" . check_plain($env_id) . "'";
+      throw new Exception($msg);
+    }
+    else {
+      // Make sure we are not on local environment - don't want to break it.
+      if (strcmp($env_id, 'solr' == 0)) {
+        throw new Exception("Acquia Solr alteration in `hook_cron` should be run only for Acquia environments - skipping.");
+      }
+
+      // Get Acquia Search cores.
+      $cores = acquia_search_multi_subs_get_search_cores();
+      $core_index = acquia_search_reconnect_identify_correct_core_present($cores, $core_name);
+
+      // This fixes the disconnected core problem.
+      acquia_search_multi_subs_apachesolr_set_default_core($env_id, $cores[$core_index]);
+
+      // But the index edit form is in incorrect state - fixing that here.
+      /* @var array $env */
+      $env = apachesolr_environment_load($env_id);
+      if ($env === FALSE) {
+        throw new Exception("Couldn't load given Acquia Search environment: '" . $env_id . "'.");
+      }
+      $subscription = acquia_agent_get_subscription(array(), $identifier, $key);
+      $derived_key_salt = $subscription['derived_key_salt'];
+      // This goes into $derived_key?
+      _acquia_search_multi_subs_create_derived_key($derived_key_salt, $core_name, $key);
+
+      // Values we want to make sure that are set correctly on the form.
+      $override_values = array();
+      $override_values['env_id'] = $env_id;
+      $override_values['acquia_subscription_id'] = $identifier;
+      $override_values['acquia_subscription_key'] = $key;
+      $override_values['acquia_subscription_corename'] = $core_name;
+
+      // Bulding correct URL.
+      $search_host = acquia_search_multi_subs_get_hostname($core_name);
+      $override_values['url'] = 'http://' . $search_host . variable_get('acquia_search_path', '/solr/' . $core_name);
+
+      // Merge our changes into the Environment array.
+      $env_final = array_merge($env, acquia_search_get_environment($override_values));
+
+      // Additional configurations for the multi-sub part of the form.
+      $configuration = acquia_search_multi_subs_default_configuration();
+      // THIS MISSING WAS CAUSING THE WHOLE ISSUE!!!
+      $configuration['acquia_override_subscription_corename'] = $core_name;
+
+      // Final version of the configuration - merging with existing values.
+      $conf_final = array_merge($env_final['conf'], $configuration);
+
+      // And moving the configuration into the Environment array.
+      $env_final['conf'] = $conf_final;
+
+      // Final re-save of the Environment.
+      apachesolr_environment_save($env_final);
+    }
+
+  }
+  catch (Exception $e) {
+    watchdog_exception('acquia_search_reconnect', $e);
+  }
+
+}
+
+/**
+ * Helper function that finds out if we have correct Acquia Seach core.
+ *
+ * Fuctions is searching through given known array of search cores for the
+ * match (param 2).
+ *
+ * @param array $cores
+ *   Array of cores as can be retrieved from
+ *   `acquia_search_multi_subs_get_search_cores()` function.
+ * @param string $core_name
+ *   Core identifier - this should be the same as Acquia identifier.
+ *
+ * @return int
+ *   Position of correct core in the provided array.
+ *
+ * @throws Exception
+ *   - if no cores are present at all (empty array),
+ *   - if no core is found.
+ */
+function acquia_search_reconnect_identify_correct_core_present(array $cores, $core_name) {
+  // Check if we have any cores at all.
+  if (count($cores) < 1) {
+    throw new Exception("No Acquia Search cores are present!");
+  }
+
+  $index = -1;
+
+  // Iterate the cores and search for the one.
+  foreach ($cores as $key => $core) {
+    if ((array_key_exists('core_id', $core)) && (strcmp($core['core_id'], $core_name) == 0)) {
+      $index = $key;
+    }
+  }
+
+  // We didn't find any matching core - throwing exception.
+  if ($index == -1) {
+    throw new Exception("Couldn't find core matching our subscription.");
+  }
+
+  // Return correct core position.
+  return $index;
+}
