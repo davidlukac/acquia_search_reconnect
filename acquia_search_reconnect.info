@@ -1,0 +1,8 @@
+name = Acquia Search Reconnect
+description = Reconnects Acquia Solr on hook_cron().
+core = 7.x
+package = Search Toolkit
+version = 7.x-0.1
+
+dependencies[] = apachesolr
+dependencies[] = acquia_search
