@@ -25,7 +25,7 @@ function acquia_search_reconnect_cron() {
     }
     else {
       // Make sure we are not on local environment - don't want to break it.
-      if (strcmp($env_id, 'solr' == 0)) {
+      if ($env_id === 'solr') {
         throw new Exception("Acquia Solr alteration in `hook_cron` should be run only for Acquia environments - skipping.");
       }
 
@@ -74,6 +74,8 @@ function acquia_search_reconnect_cron() {
 
       // Final re-save of the Environment.
       apachesolr_environment_save($env_final);
+
+      watchdog('virgin_search_cron_reconnect', "Attempted to reconnect Solr environment.", array(), WATCHDOG_NOTICE);
     }
 
   }
